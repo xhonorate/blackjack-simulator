@@ -3,7 +3,15 @@
 import {
   Box,
   Button,
+  Drawer,
+  DrawerBody,
+  DrawerCloseButton,
+  DrawerContent,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerOverlay,
   HStack,
+  Input,
   NumberDecrementStepper,
   NumberIncrementStepper,
   NumberInput,
@@ -14,9 +22,10 @@ import {
   Switch,
   Text,
   VStack,
+  useDisclosure,
 } from "@chakra-ui/react";
-
-import React, { useState } from "react";
+import { SettingsIcon } from "@chakra-ui/icons";
+import React, { useReducer, useRef, useState } from "react";
 
 const DECK_OF_CARDS: number[] = [
   1, //Ace
@@ -291,36 +300,86 @@ const getSoftHandValue = (hand: number[]): number => {
   return softHandValue;
 };
 
+const defaultRules = {
+  dealerHitsSoft17: true,
+  flatBet: false,
+  surrenderOption: true,
+  doubleAfterSplitting: true,
+  doulbeWith10or11Only: false,
+  resplitAces: true,
+  hitSplitAces: true,
+  blackjackPayout: 1.5,
+  minBet: 1,
+  maxBet: 10,
+  numberOfDecks: 6,
+  numberOfOtherPlayers: 0,
+};
+
+const estimateHouseEdge = (rules: any) => {
+  let houseEdge = -0.2;
+  if (rules.blackjackPayout === 1.2) {
+    houseEdge += 1.3;
+  } else if (rules.blackjackPayout === 1) {
+    houseEdge += 2; // estimate
+  } else if (rules.blackjackPayout === 2) {
+    houseEdge -= 2; // estimate
+  }
+
+  if (rules.dealerHitsSoft17) {
+    houseEdge += 0.21;
+  }
+
+  if (!rules.surrenderOption) {
+    houseEdge += 0.08;
+  }
+
+  if (!rules.doubleAfterSplitting) {
+    houseEdge += 0.14;
+  }
+
+  if (rules.doulbeWith10or11Only) {
+    houseEdge += 0.18;
+  }
+
+  if (!rules.resplitAces) {
+    houseEdge += 0.07;
+  }
+
+  if (!rules.hitSplitAces) {
+    houseEdge += 0.18;
+  }
+
+  if (rules.flatBet) {
+    houseEdge += 0.2;
+  }
+
+  houseEdge += 0.64 * (1 - 1 / rules.numberOfDecks); // magic equation, dw bout it
+
+  return houseEdge;
+};
+
 interface Results {
   wins: number;
-
   losses: number;
-
   ties: number;
-
   totalBets: number;
-
   totalReturn: number;
 }
 
 export default function Page(): JSX.Element {
   const [finalResult, setFinalResult] = useState<Results | null>(null);
+  const {
+    isOpen: rulesDrawerOpen,
+    onOpen: openRulesDrawer,
+    onClose: closeRulesDrawer,
+  } = useDisclosure();
+  const rulesButtonRef = useRef();
 
-  const [numberOfDecks, setNumberOfDecks] = useState(6);
+  const [rules, updateRules] = useReducer((prev, val) => {
+    return { ...prev, ...val };
+  }, defaultRules);
 
   const [numberOfPlaythroughs, setNumberOfPlaythroughs] = useState(1);
-
-  const [minBet, setMinBet] = useState(1);
-
-  const [maxBet, setMaxBet] = useState(10);
-
-  const [numberOfOtherPlayers, setNumberOfOtherPlayers] = useState(0);
-
-  const [dealerHitsSoft17, setDealerHitsSoft17] = useState(true);
-
-  const [flatBet, setFlatBet] = useState(false);
-
-  const [blackjackPayout, setBlackjackPayout] = useState(1.5);
 
   const [countValues, setCountValues] = useState(DEFAULT_COUNT_VALUES);
 
@@ -342,14 +401,14 @@ export default function Page(): JSX.Element {
     13;
 
   const getBet = (count: number): number => {
-    if (flatBet) {
-      return minBet;
+    if (rules.flatBet) {
+      return rules.minBet;
     }
 
-    if (count / numberOfDecks > absAvgWeight) {
-      return maxBet;
+    if (count / rules.numberOfDecks > absAvgWeight) {
+      return rules.maxBet;
     } else {
-      return minBet;
+      return rules.minBet;
     }
   };
 
@@ -368,7 +427,7 @@ export default function Page(): JSX.Element {
 
     let count = 0;
 
-    let shoe = generateShoe(numberOfDecks);
+    let shoe = generateShoe(rules.numberOfDecks);
 
     let shoeEmpty = false;
 
@@ -493,7 +552,7 @@ export default function Page(): JSX.Element {
 
           results.totalBets += bet;
 
-          results.totalReturn += bet * blackjackPayout;
+          results.totalReturn += bet * rules.blackjackPayout;
 
           return []; // no need to compare hands
         }
@@ -580,7 +639,8 @@ export default function Page(): JSX.Element {
       let dealerHandValue = getSoftHandValue(dealerHand);
 
       while (
-        dealerHandValue < (dealerHand.includes(1) && dealerHitsSoft17 ? 18 : 17)
+        dealerHandValue <
+        (dealerHand.includes(1) && rules.dealerHitsSoft17 ? 18 : 17)
       ) {
         log("Dealer hits");
 
@@ -639,13 +699,9 @@ export default function Page(): JSX.Element {
   const play = () => {
     const results: Results = {
       wins: 0,
-
       losses: 0,
-
       ties: 0,
-
       totalBets: 0,
-
       totalReturn: 0,
     };
 
@@ -661,160 +717,218 @@ export default function Page(): JSX.Element {
       const playThroughResults = playShoe(log);
 
       results.wins += playThroughResults.wins;
-
       results.losses += playThroughResults.losses;
-
       results.ties += playThroughResults.ties;
-
       results.totalBets += playThroughResults.totalBets;
-
       results.totalReturn += playThroughResults.totalReturn;
     }
-
-    console.log("DONE!");
 
     setFinalResult(results);
   };
 
   return (
     <>
-      <VStack>
-        <Box w={"250px"}>
-          <Text>Number of decks in shoe:</Text>
+      <Button
+        position="fixed"
+        m={2}
+        rightIcon={<SettingsIcon />}
+        ref={rulesButtonRef}
+        colorScheme="teal"
+        onClick={openRulesDrawer}
+      >
+        Rules
+      </Button>
+      <Drawer
+        size={"md"}
+        isOpen={rulesDrawerOpen}
+        placement="left"
+        onClose={closeRulesDrawer}
+        finalFocusRef={rulesButtonRef}
+      >
+        <DrawerOverlay />
+        <DrawerContent>
+          <DrawerCloseButton />
+          <DrawerHeader>Game Rules</DrawerHeader>
+          <DrawerBody>
+            <SimpleGrid
+              templateColumns={"2fr 1fr"}
+              columns={2}
+              spacing={3}
+              alignItems={"center"}
+              justifyContent={"space-around"}
+            >
+              <Text>Number of decks in shoe:</Text>
+              <NumberInput
+                min={0}
+                max={12}
+                value={rules.numberOfDecks}
+                onChange={(valueString) =>
+                  updateRules({ numberOfDecks: parseInt(valueString) })
+                }
+              >
+                <NumberInputField />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
 
-          <NumberInput
-            min={0}
-            max={12}
-            value={numberOfDecks}
-            onChange={(valueString) => setNumberOfDecks(parseInt(valueString))}
-          >
-            <NumberInputField />
+              <Text>Minbet:</Text>
+              <NumberInput
+                min={0}
+                max={10}
+                value={rules.minBet}
+                onChange={(valueString) =>
+                  updateRules({ minBet: parseInt(valueString) })
+                }
+              >
+                <NumberInputField />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
 
-            <NumberInputStepper>
-              <NumberIncrementStepper />
+              <Text>Maxbet:</Text>
+              <NumberInput
+                min={1}
+                max={10}
+                value={rules.maxBet}
+                onChange={(valueString) =>
+                  updateRules({ maxBet: parseInt(valueString) })
+                }
+              >
+                <NumberInputField />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
 
-              <NumberDecrementStepper />
-            </NumberInputStepper>
-          </NumberInput>
-        </Box>
+              <Text>Number of other players:</Text>
+              <NumberInput
+                min={0}
+                max={7}
+                value={rules.numberOfOtherPlayers}
+                onChange={(valueString) =>
+                  updateRules({ numberOfOtherPlayers: parseInt(valueString) })
+                }
+              >
+                <NumberInputField />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
 
-        <Box w={"250px"}>
-          <Text>Minbet:</Text>
+              <Text>Blackjack pays:</Text>
+              <Select
+                value={rules.blackjackPayout.toString()}
+                onChange={(e) =>
+                  updateRules({ blackjackPayout: parseFloat(e.target.value) })
+                }
+              >
+                <option value={"1"}>1:1</option>
+                <option value={"1.2"}>6:5</option>
+                <option value={"1.5"}>3:2</option>
+                <option value={"2"}>2:1</option>
+              </Select>
 
-          <NumberInput
-            min={0}
-            max={10}
-            value={minBet}
-            onChange={(valueString) => setMinBet(parseInt(valueString))}
-          >
-            <NumberInputField />
+              <Text>Dealer hits soft 17:</Text>
+              <Switch
+                isChecked={rules.dealerHitsSoft17}
+                onChange={(e) =>
+                  updateRules({ dealerHitsSoft17: e.target.checked })
+                }
+              />
 
-            <NumberInputStepper>
-              <NumberIncrementStepper />
+              <Text>Player may ONLY double on 10 or 11:</Text>
+              <Switch
+                isChecked={rules.doulbeWith10or11Only}
+                onChange={(e) =>
+                  updateRules({ doulbeWith10or11Only: e.target.checked })
+                }
+              />
 
-              <NumberDecrementStepper />
-            </NumberInputStepper>
-          </NumberInput>
-        </Box>
+              <Text>Player may double after splitting:</Text>
+              <Switch
+                isChecked={rules.doubleAfterSplitting}
+                onChange={(e) =>
+                  updateRules({ doubleAfterSplitting: e.target.checked })
+                }
+              />
 
-        <Box w={"250px"}>
-          <Text>Maxbet:</Text>
+              <Text>Player may re-split aces:</Text>
+              <Switch
+                isChecked={rules.resplitAces}
+                onChange={(e) => updateRules({ resplitAces: e.target.checked })}
+              />
 
-          <NumberInput
-            min={1}
-            max={10}
-            value={maxBet}
-            onChange={(valueString) => setMaxBet(parseInt(valueString))}
-          >
-            <NumberInputField />
+              <Text>Player may hit split aces:</Text>
+              <Switch
+                isChecked={rules.hitSplitAces}
+                onChange={(e) =>
+                  updateRules({ hitSplitAces: e.target.checked })
+                }
+              />
 
-            <NumberInputStepper>
-              <NumberIncrementStepper />
+              <Text>Player has option to surrender:</Text>
+              <Switch
+                isChecked={rules.surrenderOption}
+                onChange={(e) =>
+                  updateRules({ surrenderOption: e.target.checked })
+                }
+              />
 
-              <NumberDecrementStepper />
-            </NumberInputStepper>
-          </NumberInput>
-        </Box>
-
-        <Box w={"250px"}>
-          <Text>Number of other players at table:</Text>
-
-          <NumberInput
-            min={0}
-            max={7}
-            value={numberOfOtherPlayers}
-            onChange={(valueString) =>
-              setNumberOfOtherPlayers(parseInt(valueString))
-            }
-          >
-            <NumberInputField />
-
-            <NumberInputStepper>
-              <NumberIncrementStepper />
-
-              <NumberDecrementStepper />
-            </NumberInputStepper>
-          </NumberInput>
-        </Box>
-
-        <Box w={"250px"}>
-          <Text>Number of shoes to play through:</Text>
-
-          <NumberInput
-            min={1}
-            max={1000000}
-            value={numberOfPlaythroughs}
-            onChange={(valueString) =>
-              setNumberOfPlaythroughs(parseInt(valueString))
-            }
-          >
-            <NumberInputField />
-
-            <NumberInputStepper>
-              <NumberIncrementStepper />
-
-              <NumberDecrementStepper />
-            </NumberInputStepper>
-          </NumberInput>
-        </Box>
-
-        <HStack w={"250px"}>
-          <Text>Dealer hits soft 17:</Text>
-
-          <Switch
-            isChecked={dealerHitsSoft17}
-            onChange={(e) => setDealerHitsSoft17(e.target.checked)}
-          />
-        </HStack>
-
-        <HStack w={"250px"}>
-          <Text>Flat bet:</Text>
-
-          <Switch
-            isChecked={flatBet}
-            onChange={(e) => setFlatBet(e.target.checked)}
-          />
-        </HStack>
-
-        <HStack w={"250px"}>
-          <Text>Blackjack pays:</Text>
-
-          <Select
-            w="max-content"
-            value={blackjackPayout.toString()}
-            onChange={(e) => setBlackjackPayout(parseFloat(e.target.value))}
-          >
-            <option value={"1"}>1:1</option>
-
-            <option value={"1.2"}>6:5</option>
-
-            <option value={"1.5"}>3:2</option>
-
-            <option value={"2"}>2:1</option>
-          </Select>
-        </HStack>
-
-        <Button onClick={play}>Play</Button>
+              <Text>Flat bet:</Text>
+              <Switch
+                isChecked={rules.flatBet}
+                onChange={(e) => updateRules({ flatBet: e.target.checked })}
+              />
+            </SimpleGrid>
+          </DrawerBody>
+          <Text w="full" justifyContent={"center"} align="center" as="b">
+            Estimated House Edge:{" "}
+            <Box
+              as="span"
+              color={estimateHouseEdge(rules) < 0 ? "green.400" : "red.500"}
+            >
+              {estimateHouseEdge(rules).toFixed(2)}%
+            </Box>
+          </Text>
+          <DrawerFooter>
+            <Button variant="outline" mr={3} onClick={closeRulesDrawer}>
+              Cancel
+            </Button>
+            <Button colorScheme="blue">Save</Button>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
+      <VStack
+        spacing={2}
+        alignItems="center"
+        p={2}
+        justifyContent={"center"}
+        h="100vh"
+      >
+        <Text>Number of simulation runs:</Text>
+        <NumberInput
+          min={1}
+          max={1000000}
+          value={numberOfPlaythroughs}
+          onChange={(valueString) =>
+            setNumberOfPlaythroughs(parseInt(valueString))
+          }
+        >
+          <NumberInputField />
+          <NumberInputStepper>
+            <NumberIncrementStepper />
+            <NumberDecrementStepper />
+          </NumberInputStepper>
+        </NumberInput>
+        <Button onClick={play} colorScheme={"blue"}>
+          Simulate
+        </Button>
 
         <ResultsDisplay results={finalResult} />
       </VStack>
