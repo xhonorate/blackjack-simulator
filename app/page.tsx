@@ -401,6 +401,7 @@ const DEFAULT_RESULTS = {
 };
 
 export default function Page(): JSX.Element {
+  const [loading, setLoading] = useState(false);
   const [finalResult, setFinalResult] = useState({ ...DEFAULT_RESULTS });
 
   const {
@@ -750,6 +751,7 @@ export default function Page(): JSX.Element {
         results.totalReturn += res.totalReturn;
         if (i + 1 === numberOfPlaythroughs) {
           setFinalResult({ ...results });
+          setLoading(false);
         }
       });
       if (i % 100 === 99) {
@@ -987,10 +989,18 @@ export default function Page(): JSX.Element {
           </NumberInputStepper>
         </NumberInput>
         <HStack>
-          <Button onClick={() => play(finalResult)} colorScheme={"blue"}>
+          <Button
+            isLoading={loading}
+            onClick={() => {
+              setLoading(true);
+              play(finalResult);
+            }}
+            colorScheme={"blue"}
+          >
             Simulate
           </Button>
           <Button
+            isDisabled={loading}
             onClick={() => setFinalResult({ ...DEFAULT_RESULTS })}
             colorScheme={"blue"}
           >
