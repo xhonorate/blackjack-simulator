@@ -1,5 +1,4 @@
 import { Box, HStack, VStack } from "@chakra-ui/react";
-import { formatCardName } from "../app/page";
 
 export default function Counts({ countValues, setCountValues }) {
   return (
