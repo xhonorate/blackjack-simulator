@@ -259,7 +259,7 @@ const getSoftHandValue = (hand: number[]): number => {
   return softHandValue;
 };
 
-export const formatCardName = (card: number): string => {
+const formatCardName = (card: number): string => {
   if (card === 1) {
     return "A";
   }

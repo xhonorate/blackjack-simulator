@@ -8,7 +8,7 @@ export default function Counts({ countValues, setCountValues }) {
       <VStack>
         {Object.entries(countValues).map(([card, count]) => (
           <HStack key={card}>
-            <Box>{formatCardName(parseInt(card))}</Box>
+            <Box>{card.replace("1", "A").replace("10", "10, J, Q, K")}</Box>
             <Box>{count as string}</Box>
           </HStack>
         ))}
